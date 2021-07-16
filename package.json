@@ -14,6 +14,7 @@
     "fs-extra": "^8.1.0",
     "glob": "^7.1.6",
     "glob-promise": "^3.4.0",
+    "node-stringbuilder": "^2.2.6",
     "xmldoc": "^0.5.1",
     "yargs": "^6.5.0"
   },
@@ -30,6 +31,7 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "eslint": "^7.30.0",
     "prettier": "^1.19.1"
   },
   "engines": {

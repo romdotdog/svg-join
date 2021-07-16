@@ -1,3 +1,76 @@
 #!/usr/bin/env node
 
-require('../svg-join')
+const path = require('path');
+const fs = require('fs-extra');
+const glob = require('glob-promise');
+
+console.log(
+  `SVG-Join ${
+    require('../package.json').version
+  } Join svg files in symbol collection.`
+);
+
+const argv = require('yargs')
+  .options({
+    s: {
+      alias: 'source',
+      type: 'string',
+      demand: true,
+      describe: 'the source directory with filename mask in glob format',
+    },
+    o: {
+      alias: 'output',
+      type: 'string',
+      default: '.',
+      describe: 'the output directory',
+    },
+    n: {
+      alias: 'name',
+      type: 'string',
+      default: 'svg-bundle',
+      describe: 'file name (without ext.) for bundles (SVG & CSS)',
+    },
+    cssName: {
+      type: 'string',
+      describe: 'file name (with ext.) for CSS bundle (if different)',
+    },
+    p: {
+      alias: 'prefix',
+      type: 'string',
+      default: 'svg_',
+      describe: 'prefix for CSS selectors',
+    },
+    m: {
+      alias: 'mono',
+      type: 'boolean',
+      default: false,
+      describe: 'extract presentation attributes from single-styled SVG to CSS',
+    },
+    calcSide: {
+      type: 'boolean',
+      default: false,
+      describe: 'calculate omitted side from viewBox values',
+    },
+  })
+  .example(
+    'svg-join -s "./svg/*.svg" -o ./public -n mybundle',
+    'Will create mybundle.svg and mybundle.css in public folder.'
+  )
+  .example('svg-join -s "/your/path/**/*.svg"', 'Find SVG files in subfolders.')
+  .strict().argv;
+
+const svgout = path.join(argv.output, argv.name + '.svg');
+const cssout = path.join(argv.output, argv.cssName || argv.name + '.css');
+
+(async () => {
+  const globFiles = await glob(argv.source, { nocase: true });
+  const sources = await Promise.all(
+    globFiles.map(async f => [f, await fs.readFile(f, 'utf-8')])
+  );
+
+  const [svg, css] = require('../svg-join')(sources, argv);
+  fs.writeFile(svgout, svg, 'utf-8');
+  fs.writeFile(cssout, css, 'utf-8');
+
+  console.log(`Successfully processed files: ${globFiles.length}.`);
+})();

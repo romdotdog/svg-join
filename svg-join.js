@@ -4,10 +4,9 @@
 /* eslint "object-property-newline": 0 */
 /* eslint "camelcase": 0 */
 
-const fs = require('fs-extra');
-const glob = require('glob-promise');
 const xmldoc = require('xmldoc');
 const path = require('path');
+const StringBuilder = require('node-stringbuilder');
 
 const addPX = x => (isFinite(x) ? x + 'px' : x);
 const parseUnit = (value = '') => value.replace(/[\d.\s]/g, '');
@@ -67,62 +66,6 @@ function wipe_style_format(style, attr) {
   );
 }
 
-console.log(
-  `SVG-Join ${
-    require('./package.json').version
-  } Join svg files in symbol collection.`
-);
-const argv = require('yargs')
-  .options({
-    s: {
-      alias: 'source',
-      type: 'string',
-      demand: true,
-      describe: 'the source directory with filename mask in glob format',
-    },
-    o: {
-      alias: 'output',
-      type: 'string',
-      default: '.',
-      describe: 'the output directory',
-    },
-    n: {
-      alias: 'name',
-      type: 'string',
-      default: 'svg-bundle',
-      describe: 'file name (without ext.) for bundles (SVG & CSS)',
-    },
-    cssName: {
-      type: 'string',
-      describe: 'file name (with ext.) for CSS bundle (if different)',
-    },
-    p: {
-      alias: 'prefix',
-      type: 'string',
-      default: 'svg_',
-      describe: 'prefix for CSS selectors',
-    },
-    m: {
-      alias: 'mono',
-      type: 'boolean',
-      default: false,
-      describe: 'extract presentation attributes from single-styled SVG to CSS',
-    },
-    calcSide: {
-      type: 'boolean',
-      default: false,
-      describe: 'calculate omitted side from viewBox values',
-    },
-  })
-  .example(
-    'svg-join -s "./svg/*.svg" -o ./public -n mybundle',
-    'Will create mybundle.svg and mybundle.css in public folder.'
-  )
-  .example('svg-join -s "/your/path/**/*.svg"', 'Find SVG files in subfolders.')
-  .strict().argv;
-
-const svgout = path.join(argv.output, argv.name + '.svg');
-const cssout = path.join(argv.output, argv.cssName || argv.name + '.css');
 const header = `<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none">
 `;
 const preserve = new Set(['viewbox', 'preserveaspectratio']);
@@ -187,101 +130,93 @@ const presentation = new Set([
   'word-spacing',
   'writing-mode',
 ]);
+
 const units = new Set(['em', 'rem', 'px']);
 const round = new Set(['px']);
-const encoding = 'utf8';
-let symbols = [];
-let total = 0;
-let processed = 0;
 
-async function main() {
-  const file = fs.createWriteStream(svgout, { defaultEncoding: encoding });
-  file.write(header);
-  const globFiles = await glob(argv.source, { nocase: true });
-  const fnames = globFiles.filter(x => x !== svgout);
-  fnames.sort();
+module.exports = function join(sources, options = {}) {
+  sources = Array.isArray(sources) ? sources : Object.entries(sources);
 
-  for (let i = 0; i < fnames.length; i++) {
-    const fname = fnames[i];
-    total++;
+  const symbols = [];
+  const svg = new StringBuilder(header);
+
+  //const file = fs.createWriteStream(svgout, { defaultEncoding: encoding });
+  //file.write(header);
+
+  for (let i = 0; i < sources.length; i++) {
+    const [fname, body] = sources[i];
     try {
-      const body = await fs.readFile(fname, encoding);
-      try {
-        const doc = new xmldoc.XmlDocument(body);
-        if (doc.name.toLowerCase() !== 'svg') {
-          throw new Error('Error! The root element must be SVG.');
-        }
+      const doc = new xmldoc.XmlDocument(body);
+      if (doc.name.toLowerCase() !== 'svg') {
+        throw new Error('Error! The root element must be SVG.');
+      }
 
-        let width = 'auto';
-        let height = 'auto';
-        if (doc.attr.viewBox) {
-          let vbox = doc.attr.viewBox.split(/\s+/);
-          if (vbox.length === 4) {
-            width = +vbox[2] - vbox[0];
-            height = +vbox[3] - vbox[1];
+      let width = 'auto';
+      let height = 'auto';
+      if (doc.attr.viewBox) {
+        let vbox = doc.attr.viewBox.split(/\s+/);
+        if (vbox.length === 4) {
+          width = +vbox[2] - vbox[0];
+          height = +vbox[3] - vbox[1];
 
-            if (argv.calcSide) {
-              let w = parseFloat(doc.attr.width);
-              let wu = parseUnit(doc.attr.width);
-              let h = parseFloat(doc.attr.height);
-              let hu = parseUnit(doc.attr.height);
-              if (!!w && units.has(wu) && !h) {
-                h = (height / width) * w;
-                h = round.has(wu) ? Math.round(h) : h.toFixed(4);
-                doc.attr.height = h + wu;
-              } else if (!!h && units.has(hu) && !w) {
-                w = (width / height) * h;
-                w = round.has(hu) ? Math.round(w) : w.toFixed(4);
-                doc.attr.width = w + hu;
-              }
+          if (options.calcSide) {
+            let w = parseFloat(doc.attr.width);
+            let wu = parseUnit(doc.attr.width);
+            let h = parseFloat(doc.attr.height);
+            let hu = parseUnit(doc.attr.height);
+            if (!!w && units.has(wu) && !h) {
+              h = (height / width) * w;
+              h = round.has(wu) ? Math.round(h) : h.toFixed(4);
+              doc.attr.height = h + wu;
+            } else if (!!h && units.has(hu) && !w) {
+              w = (width / height) * h;
+              w = round.has(hu) ? Math.round(w) : w.toFixed(4);
+              doc.attr.width = w + hu;
             }
           }
         }
-        const rule = {
-          attr: {
-            width: addPX(doc.attr.width || width),
-            height: addPX(doc.attr.height || height),
-          },
-        };
-
-        doc.name = 'symbol';
-        Object.keys(doc.attr).forEach(x => {
-          if (!preserve.has(x.toLowerCase())) delete doc.attr[x];
-        });
-        doc.attr.id = path
-          .basename(fname, path.extname(fname))
-          .replace(/\s/g, '_')
-          .replace(/['"]/g, '');
-        rule.name = argv.prefix + CSS_escape(doc.attr.id);
-
-        if (argv.mono) {
-          const styled_children = doc.children.filter(x => {
-            let keys = Object.keys(x.attr);
-            if (x.attr.style) keys = keys.concat(style_keys(x.attr.style));
-            return keys.some(y => presentation.has(y));
-          });
-          if (styled_children.length === 1) {
-            Object.keys(styled_children[0].attr)
-              .filter(x => presentation.has(x))
-              .forEach(y => {
-                rule.attr[y] = styled_children[0].attr[y];
-                delete styled_children[0].attr[y];
-              });
-          }
-        }
-
-        symbols.push(rule);
-        processed++;
-        await file.write(doc.toString({ compressed: true }) + '\n');
-      } catch (e) {
-        errOut(fname, e.message);
       }
+      const rule = {
+        attr: {
+          width: addPX(doc.attr.width || width),
+          height: addPX(doc.attr.height || height),
+        },
+      };
+
+      doc.name = 'symbol';
+      Object.keys(doc.attr).forEach(x => {
+        if (!preserve.has(x.toLowerCase())) delete doc.attr[x];
+      });
+      doc.attr.id = path
+        .basename(fname, path.extname(fname))
+        .replace(/\s/g, '_')
+        .replace(/['"]/g, '');
+      rule.name = options.prefix + CSS_escape(doc.attr.id);
+
+      if (options.mono) {
+        const styled_children = doc.children.filter(x => {
+          let keys = Object.keys(x.attr);
+          if (x.attr.style) keys = keys.concat(style_keys(x.attr.style));
+          return keys.some(y => presentation.has(y));
+        });
+        if (styled_children.length === 1) {
+          Object.keys(styled_children[0].attr)
+            .filter(x => presentation.has(x))
+            .forEach(y => {
+              rule.attr[y] = styled_children[0].attr[y];
+              delete styled_children[0].attr[y];
+            });
+        }
+      }
+
+      symbols.push(rule);
+      svg.appendLine(doc.toString({ compressed: true }));
     } catch (e) {
-      console.error(e.message);
+      errOut(fname, e.message);
     }
   }
 
-  file.end('</svg>');
+  svg.append('</svg>');
   // create and optimize css
   let style = '';
   const wh = ['width', 'height'];
@@ -307,7 +242,6 @@ async function main() {
       style += wipe_style_format(same_style, attrs);
     }
   });
-  await fs.writeFile(cssout, style, encoding);
-  console.log(`Successfully processed files: ${processed}/${total}.`);
-}
-main();
+
+  return [svg.toString(), style];
+};

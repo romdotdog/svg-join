@@ -16,7 +16,7 @@
     "glob-promise": "^3.4.0",
     "node-stringbuilder": "^2.2.6",
     "xmldoc": "^0.5.1",
-    "yargs": "^6.5.0"
+    "yargs": "^17.0.1"
   },
   "keywords": [
     "generator",
